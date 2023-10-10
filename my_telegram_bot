@@ -1,0 +1,71 @@
+import requests
+from bs4 import BeautifulSoup
+import telebot
+from telebot import types
+
+token = '6373865673:AAEsc2DuEvPQk3gPhOrNO9edtDO3R8JLajE'
+
+def parsing_news(word_search):
+    url = 'https://ria.ru/world/'
+    response = requests.get(url)
+    results = []
+
+    if response.status_code == 200:
+        soup = BeautifulSoup(response.text, 'html.parser')
+        titles = soup.find_all(class_='list-item__title')
+        dates = soup.find_all(class_='list-item__date')
+
+        for title, date in zip(titles, dates):
+            article_title = title.text.strip()
+            article_link = title['href']
+            publication_time = date.text.strip()
+
+            if word_search in article_title:
+                article_response = requests.get(article_link)
+                if article_response.status_code == 200:
+                    article_soup = BeautifulSoup(article_response.text, 'html.parser')
+                    article_text = article_soup.find_all(class_='article__text')
+                    full_text = '\n'.join([item.text.strip() for item in article_text])
+
+                    results.append({
+                        'Дата и время публикации': publication_time,
+                        'Название статьи': article_title,
+                        'Ссылка': article_link,
+                        'Текст статьи': full_text
+                    })
+
+    return results
+
+def telegram_bot(token):
+    bot = telebot.TeleBot(token)
+
+    keyboard = types.ReplyKeyboardMarkup(row_width=2)
+    start_button = types.KeyboardButton('Старт')
+    search_button = types.KeyboardButton('Поиск')
+    keyboard.add(start_button, search_button)
+
+    @bot.message_handler(commands=["start"])
+    def start_message(message):
+        bot.send_message(message.chat.id, "Поиск последних новостей.", reply_markup=keyboard)
+
+    @bot.message_handler(commands=["search"])
+    def search_news(message):
+        word_to_search = message.text.replace('/search', '').strip()
+        search_results = parsing_news(word_to_search)
+
+        if not search_results:
+            bot.send_message(message.chat.id, f"No news found for '{word_to_search}'.")
+        else:
+            for result in search_results:
+                msg = (
+                    f"Дата и время публикации: {result['Дата и время публикации']}\n"
+                    f"Название статьи: {result['Название статьи']}\n"
+                    f"Ссылка: {result['Ссылка']}\n"
+                    f"Текст статьи: {result['Текст статьи']}\n"
+                )
+                bot.send_message(message.chat.id, msg)
+
+    bot.polling()
+
+if __name__ == '__main__':
+    telegram_bot(token)
